@@ -1,0 +1,21 @@
+#!/bin/bash 
+#
+# Wrapper script to run the debian package build of the lxcfs
+# package
+#
+pushd cgmanager-0.37
+./configure
+make
+make install
+popd
+
+./configure 
+make
+sed -e "s/%version/$1/g" control > package/DEBIAN/control
+cp -RL  lxcfs package/usr/bin
+cd package
+md5sum `find . -type f | grep -v '^[.]/DEBIAN/'` >DEBIAN/md5sums
+cd ..
+fakeroot dpkg-deb --build package .
+exit $?
+

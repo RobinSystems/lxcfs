@@ -1,0 +1,37 @@
+[DESCRIPTION]
+
+cgm is a client script to simplify making requests of the cgroup
+manager.  It simply calls dbus\-send to send requests to the running
+cgmanager or cgproxy.
+
+[EXAMPLES]
+.P
+To create a new cgroup called foo and move your shell into it, you could do:
+.P
+.br
+sudo cgm create all foo
+.br
+sudo cgm chown all foo $(id \-u) $(id \-g)
+.br
+cgm movepid all foo $$
+.br
+.P
+Then to freeze that cgroup,
+.P
+.br
+cgm setvalue freezer foo freezer.state FROZEN
+
+[NOTES]
+
+In order to protect the host from root in containers, cgmanager locks
+prevents tasks from administering cgroups which are not under their
+own.  The exceptions are that root in a container may escape up to
+the cgroup of its cgproxy, and root on the host may escape to the
+root cgroup.
+
+This means that a user in freezer cgroup /foo cannot list cgroups in
+/.  However, as root he can use movepidabs to escape to /, then
+list cgroups in /.
+
+[SEE ALSO]
+cgmanager(8)
