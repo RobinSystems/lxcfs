@@ -1,0 +1,41 @@
+#!/bin/sh -eu
+
+# /proc files
+if [ -d /var/lib/lxcfs/proc/ ]; then
+    for entry in /var/lib/lxcfs/proc/*; do
+        [ -e "${LXC_ROOTFS_MOUNT}/proc/$(basename $entry)" ] || continue
+        mount -n --bind $entry ${LXC_ROOTFS_MOUNT}/proc/$(basename $entry)
+    done
+fi
+
+# /sys/fs/cgroup files
+if [ -d "${LXC_ROOTFS_MOUNT}/sys/fs/cgroup" ]; then
+    mount -n -t tmpfs none ${LXC_ROOTFS_MOUNT}/sys/fs/cgroup/ -o size=4k,mode=755
+    if [ -d /sys/fs/cgroup/cgmanager.lower ]; then
+        mkdir ${LXC_ROOTFS_MOUNT}/sys/fs/cgroup/cgmanager
+        mount -n --bind /sys/fs/cgroup/cgmanager.lower \
+            ${LXC_ROOTFS_MOUNT}/sys/fs/cgroup/cgmanager
+    elif [ -d /sys/fs/cgroup/cgmanager ]; then
+        mkdir ${LXC_ROOTFS_MOUNT}/sys/fs/cgroup/cgmanager
+        mount -n --bind /sys/fs/cgroup/cgmanager \
+            ${LXC_ROOTFS_MOUNT}/sys/fs/cgroup/cgmanager
+    fi
+
+    if [ -d /var/lib/lxcfs/cgroup ]; then
+        for entry in /var/lib/lxcfs/cgroup/*; do
+            DEST=$(basename $entry)
+            if [ "$DEST" = "name=systemd" ]; then
+                DEST="systemd"
+            fi
+
+            mkdir ${LXC_ROOTFS_MOUNT}/sys/fs/cgroup/$DEST
+            mount -n --bind $entry ${LXC_ROOTFS_MOUNT}/sys/fs/cgroup/$DEST
+        done
+
+        if [ -d ${LXC_ROOTFS_MOUNT}/var/lib/lxcfs/ ]; then
+            mount -n --bind /var/lib/lxcfs ${LXC_ROOTFS_MOUNT}/var/lib/lxcfs/
+        fi
+    fi
+fi
+
+exit 0

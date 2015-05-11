@@ -1,0 +1,39 @@
+#!/bin/sh -eu
+
+# Don't mess with containers that don't have /sys/fs/cgroup configured
+# (lxc.mount.auto = cgroup:mixed)
+
+if touch ${LXC_ROOTFS_MOUNT}/sys/fs/cgroup/lxcfs; then
+    rm ${LXC_ROOTFS_MOUNT}/sys/fs/cgroup/lxcfs
+else
+    exit 0
+fi
+
+# /proc files
+if [ -d /usr/local/var/lib/lxcfs/proc/ ]; then
+    for entry in /usr/local/var/lib/lxcfs/proc/*; do
+        [ -e "${LXC_ROOTFS_MOUNT}/proc/$(basename $entry)" ] || continue
+        mount -n --bind $entry ${LXC_ROOTFS_MOUNT}/proc/$(basename $entry)
+    done
+fi
+
+# /sys/fs/cgroup files
+if [ -d "${LXC_ROOTFS_MOUNT}/sys/fs/cgroup" ]; then
+    if [ -d /usr/local/var/lib/lxcfs/cgroup ]; then
+        for entry in /usr/local/var/lib/lxcfs/cgroup/*; do
+            DEST=$(basename $entry)
+            if [ "$DEST" = "name=systemd" ]; then
+                DEST="systemd"
+            fi
+
+            mkdir ${LXC_ROOTFS_MOUNT}/sys/fs/cgroup/$DEST
+            mount -n --bind $entry ${LXC_ROOTFS_MOUNT}/sys/fs/cgroup/$DEST
+        done
+
+        if [ -d ${LXC_ROOTFS_MOUNT}/usr/local/var/lib/lxcfs/ ]; then
+            mount -n --bind /usr/local/var/lib/lxcfs ${LXC_ROOTFS_MOUNT}/usr/local/var/lib/lxcfs/
+        fi
+    fi
+fi
+
+exit 0
