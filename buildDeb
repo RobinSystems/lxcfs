@@ -11,6 +11,8 @@ popd
 
 ./configure 
 make
+mkdir -p package/DEBIAN
+mkdir -p package/var/lib/lxcfs
 sed -e "s/%version/$1/g" control > package/DEBIAN/control
 cp -RL  lxcfs package/usr/bin
 cd package
