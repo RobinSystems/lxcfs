@@ -2007,28 +2007,44 @@ static void get_cpu_key(char *cpustat, unsigned long *v, const char *key)
 }
 
 static int proc_stat_read(char *buf, size_t size, off_t offset,
-                struct fuse_file_info *fi)
+		struct fuse_file_info *fi)
 {
-        struct fuse_context *fc = fuse_get_context();
-        nih_local char *cg = get_pid_cgroup(fc->pid, "cpuset");
+	struct fuse_context *fc = fuse_get_context();
+	struct file_info *d = (struct file_info *)fi->fh;
+	nih_local char *cg = get_pid_cgroup(fc->pid, "cpuset");
         nih_local char *cgcpuacct = get_pid_cgroup(fc->pid, "cpuacct");
-        nih_local char *cpuset = NULL;
+	nih_local char *cpuset = NULL;
         nih_local char *cpustat_str = NULL,*cpuusage_str = NULL,*cpuusage_cpu_str = NULL, *cpuusage_total_str = NULL;
-        unsigned long user=0, system = 0, idle = 0;
-        char *line = NULL;
-        size_t linelen = 0, total_len = 0;
-        int curcpu = -1; /* cpu numbering starts at 0 */
-        FILE *f;
+	char *line = NULL;
+	size_t linelen = 0, total_len = 0, rv = 0;
+	int curcpu = -1; /* cpu numbering starts at 0 */
+	unsigned long user = 0, nice = 0, system = 0, idle = 0, iowait = 0, irq = 0, softirq = 0, steal = 0, guest = 0;
+	unsigned long user_sum = 0, nice_sum = 0, system_sum = 0, idle_sum = 0, iowait_sum = 0,
+					irq_sum = 0, softirq_sum = 0, steal_sum = 0, guest_sum = 0;
+#define CPUALL_MAX_SIZE BUF_RESERVE_SIZE
+	char cpuall[CPUALL_MAX_SIZE];
+	/* reserve for cpu all */
+	char *cache = d->buf + CPUALL_MAX_SIZE;
+	size_t cache_size = d->buflen - CPUALL_MAX_SIZE;
+	FILE *f;
         long int reaperage = getreaperage(fc->pid);
-        if (offset)
-                return -EINVAL;
 
-        if (!cg)
-                return 0;
+	if (offset){
+		if (offset > d->size)
+			return -EINVAL;
+		int left = d->size - offset;
+		total_len = left > size ? size: left;
+		memcpy(buf, d->buf + offset, total_len);
+		return total_len;
+	}
 
-        cpuset = get_cpuset(cg);
-        if (!cpuset)
-                return 0;
+	if (!cg)
+		return 0;
+
+	cpuset = get_cpuset(cg);
+	if (!cpuset)
+		return 0;
+
 
         if (!cgm_get_value("cpuacct", cgcpuacct, "cpuacct.usage", &cpuusage_total_str))
             return 0;
@@ -2037,66 +2053,123 @@ static int proc_stat_read(char *buf, size_t size, off_t offset,
         if (!cgm_get_value("cpuacct", cgcpuacct, "cpuacct.usage_percpu", &cpuusage_cpu_str))
                 return 0;
 
-        get_cpu_key(cpustat_str, &user, "user");
-        get_cpu_key(cpustat_str, &system, "system");
-        idle = reaperage*100 - (user + system);
+        get_cpu_key(cpustat_str, &user_sum, "user");
+        get_cpu_key(cpustat_str, &system_sum, "system");
+        idle_sum = reaperage*100 - (user_sum + system_sum);
         if(idle < 0)
 	   idle = 0; 
+
+
 	f = fopen("/proc/stat", "r");
-        if (!f)
-                return 0;
-        int lineCnt = 0;
-        while (getline(&line, &linelen, f) != -1) {
-                size_t l;
-                int cpu;
-                char cpu_char[10]; /* That's a lot of cores */
-                char *c;
-                if(lineCnt == 0)
-                {
-                        l = snprintf(buf, size, "cpu %lu 0 %lu %lu 0 0 0\n", user, system, idle);
-                        buf += l;
-                        size -= l;
-                        total_len += l;
-                        lineCnt++;
-                        continue;
-                }
+	if (!f)
+		return 0;
 
-                if (sscanf(line, "cpu%9[^ ]", cpu_char) != 1) {
-                        /* not a ^cpuN line containing a number N, just print it */
-                        l = snprintf(buf, size, "%s", line);
-                        buf += l;
-                        size -= l;
-                        total_len += l;
-                        continue;
-                }
+	//skip first line
+	if (getline(&line, &linelen, f) < 0) {
+		fprintf(stderr, "proc_stat_read read first line failed\n");
+		goto out;
+	}
 
-                if (sscanf(cpu_char, "%d", &cpu) != 1)
-                        continue;
-                if (!cpu_in_cpuset(cpu, cpuset))
-                        continue;
-                curcpu ++;
+	while (getline(&line, &linelen, f) != -1) {
+		size_t l;
+		int cpu;
+		char cpu_char[10]; /* That's a lot of cores */
+		char *c;
 
-                c = strchr(line, ' ');
-                if (!c)
-                        continue;
+		if (sscanf(line, "cpu%9[^ ]", cpu_char) != 1) {
+			/* not a ^cpuN line containing a number N, just print it */
+			l = snprintf(cache, cache_size, "%s", line);
+			if (l < 0) {
+				perror("Error writing to cache");
+				rv = 0;
+				goto err;
+			}
+			if (l >= cache_size) {
+				fprintf(stderr, "Internal error: truncated write to cache\n");
+				rv = 0;
+				goto err;
+			}
+			if (l < cache_size) {
+				cache += l;
+				cache_size -= l;
+				total_len += l;
+				continue;
+			} else {
+				//no more space, break it
+				cache += cache_size;
+				total_len += cache_size;
+				cache_size = 0;
+				break;
+			}
+		}
+
+		if (sscanf(cpu_char, "%d", &cpu) != 1)
+			continue;
+		if (!cpu_in_cpuset(cpu, cpuset))
+			continue;
+		curcpu ++;
+
+		c = strchr(line, ' ');
+		if (!c)
+			continue;
+
                 if(curcpu == 0)
                 {
-                        l = snprintf(buf, size, "cpu%d %lu 0 %lu %lu 0 0 0\n", curcpu, user, system,  idle);
+                        l = snprintf(cache, cache_size, "cpu%d %lu 0 %lu %lu 0 0 0\n", curcpu, user_sum, system_sum,  idle_sum);
                 }
                 else
                 {
-                        l = snprintf(buf, size, "cpu%d 0 0 0 0 0 0 0\n", curcpu);
+                        l = snprintf(cache, cache_size, "cpu%d 0 0 0 0 0 0 0\n", curcpu);
                 }
-                buf += l;
-                size -= l;
-                total_len += l;
-        }
 
+		if (l < 0) {
+			perror("Error writing to cache");
+			rv = 0;
+			goto err;
 
-        fclose(f);
-        free(line);
-        return total_len;
+		}
+		if (l >= cache_size) {
+			fprintf(stderr, "Internal error: truncated write to cache\n");
+			rv = 0;
+			goto err;
+		}
+
+		cache += l;
+		cache_size -= l;
+		total_len += l;
+
+		if (sscanf(line, "%*s %lu %lu %lu %lu %lu %lu %lu %lu %lu", &user, &nice, &system, &idle, &iowait, &irq,
+			&softirq, &steal, &guest) != 9)
+			continue;
+	}
+
+	cache = d->buf;
+
+	int cpuall_len = snprintf(cpuall, CPUALL_MAX_SIZE, "%s %lu %lu %lu %lu %lu %lu %lu %lu %lu\n",
+		"cpu ", user_sum, nice_sum, system_sum, idle_sum, iowait_sum, irq_sum, softirq_sum, steal_sum, guest_sum);
+	if (cpuall_len > 0 && cpuall_len < CPUALL_MAX_SIZE){
+		memcpy(cache, cpuall, cpuall_len);
+		cache += cpuall_len;
+	}else{
+		/* shouldn't happen */
+		fprintf(stderr, "proc_stat_read copy cpuall failed, cpuall_len=%d\n", cpuall_len);
+		cpuall_len = 0;
+	}
+
+	memmove(cache, d->buf + CPUALL_MAX_SIZE, total_len);
+	total_len += cpuall_len;
+	d->size = total_len;
+	if (total_len > size ) total_len = size;
+
+	memcpy(buf, d->buf, total_len);
+  out:
+	rv = total_len;
+  err:
+	fclose(f);
+	free(line);
+	return rv;
 }
+
 
 /*
  * We read /proc/uptime and reuse its second field.
