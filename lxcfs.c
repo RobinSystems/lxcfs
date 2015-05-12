@@ -2055,10 +2055,9 @@ static int proc_stat_read(char *buf, size_t size, off_t offset,
 
         get_cpu_key(cpustat_str, &user_sum, "user");
         get_cpu_key(cpustat_str, &system_sum, "system");
-        idle_sum = reaperage*100 - (user_sum + system_sum);
-        if(idle < 0)
-	   idle = 0; 
-
+        idle_sum = 0;
+        if(reaperage*100 > (user_sum + system_sum))
+           idle_sum = reaperage*100 - (user_sum + system_sum);
 
 	f = fopen("/proc/stat", "r");
 	if (!f)
@@ -2115,11 +2114,11 @@ static int proc_stat_read(char *buf, size_t size, off_t offset,
 
                 if(curcpu == 0)
                 {
-                        l = snprintf(cache, cache_size, "cpu%d %lu 0 %lu %lu 0 0 0\n", curcpu, user_sum, system_sum,  idle_sum);
+                        l = snprintf(cache, cache_size, "cpu%d %lu 0 %lu %lu 0 0 0 0 0\n", curcpu, user_sum, system_sum,  idle_sum);
                 }
                 else
                 {
-                        l = snprintf(cache, cache_size, "cpu%d 0 0 0 0 0 0 0\n", curcpu);
+                        l = snprintf(cache, cache_size, "cpu%d 0 0 0 0 0 0 0 0 0\n", curcpu);
                 }
 
 		if (l < 0) {
