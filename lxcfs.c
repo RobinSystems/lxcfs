@@ -2234,17 +2234,16 @@ static int proc_diskstats_read(char *buf, size_t size, off_t offset,
 	if (!cg)
 		return 0;
 
-	if (!cgm_get_value("blkio", cg, "blkio.io_serviced", &io_serviced_str))
+	if (!cgm_get_value("blkio", cg, "blkio.throttle.io_serviced", &io_serviced_str))
 		return 0;
 	if (!cgm_get_value("blkio", cg, "blkio.io_merged", &io_merged_str))
 		return 0;
-	if (!cgm_get_value("blkio", cg, "blkio.io_service_bytes", &io_service_bytes_str))
+	if (!cgm_get_value("blkio", cg, "blkio.throttle.io_service_bytes", &io_service_bytes_str))
 		return 0;
 	if (!cgm_get_value("blkio", cg, "blkio.io_wait_time", &io_wait_time_str))
 		return 0;
 	if (!cgm_get_value("blkio", cg, "blkio.io_service_time", &io_service_time_str))
 		return 0;
-
 
 	f = fopen("/proc/diskstats", "r");
 	if (!f)
@@ -2255,8 +2254,9 @@ static int proc_diskstats_read(char *buf, size_t size, off_t offset,
 		char *printme, lbuf[256];
 
 		i = sscanf(line, "%u %u %71s", &major, &minor, dev_name);
+
 		if(i == 3){
-			get_blkio_io_value(io_serviced_str, major, minor, "Read", &read);
+		        get_blkio_io_value(io_serviced_str, major, minor, "Read", &read);
 			get_blkio_io_value(io_serviced_str, major, minor, "Write", &write);
 			get_blkio_io_value(io_merged_str, major, minor, "Read", &read_merged);
 			get_blkio_io_value(io_merged_str, major, minor, "Write", &write_merged);
@@ -2285,12 +2285,15 @@ static int proc_diskstats_read(char *buf, size_t size, off_t offset,
 
 		memset(lbuf, 0, 256);
 		if (read || write || read_merged || write_merged || read_sectors || write_sectors || read_ticks || write_ticks) {
-			snprintf(lbuf, 256, "%u       %u %s %lu %lu %lu %lu %lu %lu %lu %lu %lu %lu %lu\n",
+			l = snprintf(lbuf, 256, "%u       %u %s %lu %lu %lu %lu %lu %lu %lu %lu %lu %lu %lu\n",
 				major, minor, dev_name, read, read_merged, read_sectors, read_ticks,
 				write, write_merged, write_sectors, write_ticks, ios_pgr, tot_ticks, rq_ticks);
+
 			printme = lbuf;
-		} else
+
+		} else {
 			continue;
+                 }
 
 		l = snprintf(buf, size, "%s", printme);
 		if (l < 0) {
