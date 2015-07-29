@@ -10,8 +10,14 @@
 /* Define to 1 if you have the `cgmanager' library (-lcgmanager). */
 #define HAVE_LIBCGMANAGER 1
 
+/* Define to 1 if you have the `nih' library (-lnih). */
+#define HAVE_LIBNIH 1
+
 /* Define to 1 if you have the <memory.h> header file. */
 #define HAVE_MEMORY_H 1
+
+/* Define to 1 if you have the `nih_threadsafe' function. */
+/* #undef HAVE_NIH_THREADSAFE */
 
 /* Define to 1 if you have the <stdint.h> header file. */
 #define HAVE_STDINT_H 1
