@@ -2148,12 +2148,18 @@ static int proc_stat_read(char *buf, size_t size, off_t offset,
         if (!cgm_get_value("cpuacct", cgcpuacct, "cpuacct.usage_percpu", &cpuusage_cpu_str))
                 return 0;
 
-        get_cpu_key(cpustat_str, &user_sum, "user");
-        get_cpu_key(cpustat_str, &system_sum, "system");
-        idle_sum = 0;
-	int cpu_cores = get_cpu_cores();
-        idle_sum = reaperage*100 - (strtoul(cpuusage_total_str,NULL,0)/(cpu_cores*10000000));
+        unsigned long cpuusage_cpu[100];
+        int num_cpuusage = 0;
+        char *token;
+   	token = strtok(cpuusage_cpu_str, " ");
+   	while( token != NULL ) 
+   	{
+		cpuusage_cpu[num_cpuusage] = strtoul(token, NULL, 0);
+      		token = strtok(NULL, " ");
+		num_cpuusage++;
+   	}
 
+        idle_sum = 0;
 	f = fopen("/proc/stat", "r");
 	if (!f)
 		return 0;
@@ -2206,15 +2212,10 @@ static int proc_stat_read(char *buf, size_t size, off_t offset,
 		c = strchr(line, ' ');
 		if (!c)
 			continue;
+		user = cpuusage_cpu[curcpu]/10000000;
+		idle = reaperage*100 - user; 
 
-                if(curcpu == 0)
-                {
-                        l = snprintf(cache, cache_size, "cpu%d %lu 0 %lu %lu 0 0 0 0 0\n", curcpu, user_sum, system_sum,  idle_sum);
-                }
-                else
-                {
-                        l = snprintf(cache, cache_size, "cpu%d 0 0 0 0 0 0 0 0 0\n", curcpu);
-                }
+		l = snprintf(cache, cache_size, "cpu%d %lu 0 0 %lu 0 0 0 0 0\n", curcpu, user, idle);
 
 		if (l < 0) {
 			perror("Error writing to cache");
@@ -2231,6 +2232,9 @@ static int proc_stat_read(char *buf, size_t size, off_t offset,
 		cache += l;
 		cache_size -= l;
 		total_len += l;
+
+                user_sum += user;
+                idle_sum += idle;
 
 		if (sscanf(line, "%*s %lu %lu %lu %lu %lu %lu %lu %lu %lu", &user, &nice, &system, &idle, &iowait, &irq,
 			&softirq, &steal, &guest) != 9)
